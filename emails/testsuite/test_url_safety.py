@@ -192,3 +192,22 @@ def test_redirect_to_other_host_drops_credentials(local_server, other_server, mo
     sent = {k.lower(): v for k, v in other_server.headers[0].items()}
     assert 'authorization' not in sent
     assert 'cookie' not in sent
+
+
+def test_fetch_url_rejects_backslash_before_netrc_lookup(tmp_path, monkeypatch):
+    # requests picks .netrc credentials for "private.internal" from the raw url,
+    # but sends the request to 8.8.8.8 (backslash becomes %5C in the path).
+    import requests
+    netrc = tmp_path / 'netrc'
+    netrc.write_text('machine private.internal login user password secret\n')
+    monkeypatch.setenv('NETRC', str(netrc))
+    sent = []
+
+    def fake_send(self, request, **kwargs):
+        sent.append(request)
+        raise requests.ConnectionError('blocked in test')
+
+    monkeypatch.setattr(requests.Session, 'send', fake_send)
+    with pytest.raises(UnsafeURLError):
+        fetch_url('http://8.8.8.8\\@private.internal/')
+    assert sent == []

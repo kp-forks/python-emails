@@ -74,9 +74,21 @@ from internal hosts (for example, a local development server), replace the valid
 
     emails.utils.url_validator = my_validator
 
-The validator resolves the host name before the request is made, so it does not protect
-against DNS rebinding. If you render HTML from untrusted users, also restrict
-outgoing traffic of the process at the network level.
+The check is a mitigation, not a complete SSRF protection. Known limitations:
+
+* **DNS rebinding.** The validator resolves the host name separately from the actual
+  connection, so a host that resolves to a public address during the check may resolve
+  to an internal one when connecting.
+* **Proxies.** Requests are made with ``requests`` defaults, so proxies from environment
+  variables (``HTTP_PROXY``, ``HTTPS_PROXY``, ``ALL_PROXY``) are used. A proxy resolves
+  and connects to the destination itself and may reach addresses the validator would reject.
+* **Ambient credentials.** Credentials from ``~/.netrc`` (or ``NETRC``) are sent to
+  the matching hosts, as ``requests`` does by default.
+
+If you render HTML from untrusted users, also restrict outgoing traffic of the process
+at the network level (firewall or an egress proxy that enforces destination filtering),
+and do not keep ``.netrc`` credentials or proxy settings with access to internal
+services in that environment.
 
 
 Loaders

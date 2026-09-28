@@ -333,6 +333,10 @@ def fetch_url(url: str, valid_http_codes: tuple[int, ...] = (200, ),
     args = {}
     args.update(DEFAULT_REQUESTS_PARAMS)
     args.update(requests_args or {})
+    if url_validator is not None:
+        # Also validate the raw url: requests picks .netrc credentials
+        # from it before preparation may change its host (e.g. backslashes).
+        url_validator(url)
     with ValidatingSession() as session:
         session.max_redirects = MAX_REDIRECTS
         try:

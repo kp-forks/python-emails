@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.3
 
-### Security
+### Security (GHSA-g9x3-2q64-m592)
 
 - SSRF hardening when fetching external CSS and images during HTML transformation and loading:
   urls (including every redirect hop) whose host resolves to a loopback, private, link-local

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import socket
+import ipaddress
+from urllib.parse import urlparse
 from time import mktime
 from datetime import datetime
 from random import randrange
@@ -19,7 +21,7 @@ from email.utils import parseaddr, formatdate
 from email.utils import escapesre, specialsre  # type: ignore[attr-defined]  # private but stable
 
 from . import USER_AGENT
-from .exc import HTTPLoaderError
+from .exc import HTTPLoaderError, UnsafeURLError
 
 F = TypeVar('F', bound=Callable[..., Any])
 
@@ -256,17 +258,65 @@ class SafeMIMEMultipart(MIMEMixin, MIMEMultipart):  # type: ignore[misc]  # inte
 
 
 DEFAULT_REQUESTS_PARAMS: dict[str, Any] = dict(allow_redirects=True,
-                             verify=False, timeout=10,
+                             verify=True, timeout=10,
                              headers={'User-Agent': USER_AGENT})
+
+MAX_REDIRECTS = 10
+
+
+def default_url_validator(url: str) -> None:
+    """
+    Reject urls that are not plain http(s) or whose host resolves
+    to a non-public address (loopback, private, link-local, etc).
+    Protects against SSRF when html comes from untrusted sources.
+    """
+    if '\\' in url:
+        # Parsers disagree on backslashes (urlparse vs requests/urllib3)
+        raise UnsafeURLError('Backslash in url: %s' % url)
+    parts = urlparse(url)
+    if parts.scheme not in ('http', 'https'):
+        raise UnsafeURLError('Unsafe url scheme: %s' % url)
+    host = parts.hostname
+    if not host:
+        raise UnsafeURLError('No host in url: %s' % url)
+    try:
+        infos = socket.getaddrinfo(host, parts.port or None, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError) as e:
+        raise HTTPLoaderError('Error resolving host of url: %s (%s)' % (url, e))
+    for info in infos:
+        ip = ipaddress.ip_address(str(info[4][0]).split('%', 1)[0])
+        if not ip.is_global or ip.is_multicast:
+            raise UnsafeURLError('Url host resolves to non-public address %s: %s' % (ip, url))
+
+
+# Validator applied to every url fetched by fetch_url, including redirect targets.
+# Set to None (or a custom callable) to allow fetching from internal hosts
+# when html comes from trusted sources only.
+url_validator: Callable[[str], None] | None = default_url_validator
 
 
 def fetch_url(url: str, valid_http_codes: tuple[int, ...] = (200, ),
               requests_args: dict[str, Any] | None = None) -> Any:
     import requests
+
+    class ValidatingSession(requests.Session):
+        # Validate the prepared url right before each request, including every
+        # redirect hop; redirects themselves are handled by requests, which
+        # strips credentials and cookies when the host changes.
+        def send(self, request: Any, **kwargs: Any) -> Any:
+            if url_validator is not None:
+                url_validator(request.url)
+            return super().send(request, **kwargs)
+
     args = {}
     args.update(DEFAULT_REQUESTS_PARAMS)
     args.update(requests_args or {})
-    r = requests.get(url, **args)
+    with ValidatingSession() as session:
+        session.max_redirects = MAX_REDIRECTS
+        try:
+            r = session.get(url, **args)
+        except requests.TooManyRedirects:
+            raise HTTPLoaderError('Too many redirects loading url: %s' % url)
     if valid_http_codes and (r.status_code not in valid_http_codes):
         raise HTTPLoaderError('Error loading url: %s. HTTP status: %s' % (url, r.status_code))
     return r

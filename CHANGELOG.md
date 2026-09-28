@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- SSRF hardening when fetching external CSS and images during HTML transformation and loading:
+  urls (including every redirect hop) whose host resolves to a loopback, private, link-local
+  or other non-public address are rejected with `emails.UnsafeURLError`.
+  Use `emails.utils.url_validator` to customize or disable the check for trusted HTML.
+  This does not protect against DNS rebinding; restrict egress traffic when rendering untrusted HTML.
+- CSS `@import` rules are no longer fetched while inlining styles (they were fetched by cssutils,
+  bypassing all checks, and never inlined).
+- TLS certificates are now verified when fetching remote resources (`verify=True` by default).
+- External stylesheets are now loaded via `fetch_url`, so they honor `requests_params` and the default timeout.
+
 ## 1.0.2
 
 ### Added

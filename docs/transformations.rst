@@ -45,6 +45,40 @@ Example of customized making images inline:
     '<html><body><img src="cid:promo.png"/></body></html>'
 
 
+Remote resources and untrusted HTML
+-----------------------------------
+
+`Message.transform` and the loaders fetch external stylesheets (``<link rel="stylesheet">``)
+and images (``<img src>``) referenced from the HTML.
+To protect against SSRF when HTML comes from untrusted users, every url
+(including redirect targets) is checked before it is fetched:
+only ``http`` and ``https`` urls whose host resolves to a public IP address are allowed.
+Fetching a url that points to a loopback, private, link-local or otherwise
+non-public address raises :exc:`emails.UnsafeURLError`. TLS certificates are verified.
+CSS ``@import`` rules are never fetched.
+
+If your HTML comes only from trusted sources and you need to load resources
+from internal hosts (for example, a local development server), replace the validator:
+
+.. code-block:: python
+
+    import emails.utils
+
+    # disable checks completely
+    emails.utils.url_validator = None
+
+    # or allow a specific internal host
+    def my_validator(url):
+        if not url.startswith('http://assets.internal/'):
+            emails.utils.default_url_validator(url)
+
+    emails.utils.url_validator = my_validator
+
+The validator resolves the host name before the request is made, so it does not protect
+against DNS rebinding. If you render HTML from untrusted users, also restrict
+outgoing traffic of the process at the network level.
+
+
 Loaders
 -------
 

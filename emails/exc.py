@@ -7,6 +7,10 @@ class HTTPLoaderError(Exception):
     pass
 
 
+class UnsafeURLError(HTTPLoaderError):
+    pass
+
+
 class BadHeaderError(ValueError):
     pass
 

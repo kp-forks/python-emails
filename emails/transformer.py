@@ -15,14 +15,20 @@ import urllib.parse as urlparse
 from .loader.local_store import FileNotFound
 from .store import MemoryFileStore, LazyHTTPFile
 from .template.base import BaseTemplate
+from .utils import fetch_url
+
+
+def _no_fetch(url):
+    return None, ''
 
 
 class LocalPremailer(Premailer):
 
-    def __init__(self, html, local_loader=None, attribute_name=None, **kw):
+    def __init__(self, html, local_loader=None, attribute_name=None, requests_params=None, **kw):
         if 'preserve_internal_links' not in kw:
             kw['preserve_internal_links'] = True
         self.local_loader = local_loader
+        self.requests_params = requests_params
         if attribute_name:
             self.attribute_name = attribute_name
         super(LocalPremailer, self).__init__(html=html, **kw)
@@ -56,6 +62,18 @@ class LocalPremailer(Premailer):
                     raise ExternalNotFoundError(url)
 
         return content
+
+    def _load_external_url(self, url):
+        # Use fetch_url instead of premailer's loader: it validates urls
+        # (including redirect targets) against SSRF and applies timeouts.
+        return fetch_url(url, requests_args=self.requests_params).text
+
+    def _parse_css_string(self, css_body, validate=True):
+        # cssutils fetches @import targets itself (via urllib, including file://
+        # and private hosts) and premailer does not inline imported rules anyway,
+        # so never let it fetch anything.
+        parser = CSSParser(fetcher=_no_fetch, validate=validate)
+        return parser.parseString(css_body)
 
 
 class HTMLParser(object):
@@ -271,6 +289,7 @@ class BaseTransformer(HTMLParser):
         kw.setdefault('method', self._method)
         kw.setdefault('base_url', self.base_url)
         kw.setdefault('local_loader', self.local_loader)
+        kw.setdefault('requests_params', self.requests_params)
         return LocalPremailer(html=self.tree, **kw)
 
     @property

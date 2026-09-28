@@ -598,6 +598,12 @@ Exceptions
 
    Raised when loading content from a URL fails (e.g., HTTP error, connection timeout).
 
+.. exception:: emails.UnsafeURLError
+
+   Subclass of :exc:`emails.HTTPLoaderError`. Raised when a URL is rejected by
+   ``emails.utils.url_validator`` before fetching, e.g. because its host resolves to
+   a loopback, private or link-local address.
+
 .. exception:: emails.BadHeaderError
 
    Raised when an email header contains invalid characters (such as newlines

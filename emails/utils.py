@@ -264,6 +264,23 @@ DEFAULT_REQUESTS_PARAMS: dict[str, Any] = dict(allow_redirects=True,
 MAX_REDIRECTS = 10
 
 
+_NAT64_NETWORK = ipaddress.ip_network('64:ff9b::/96')
+
+
+def _is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.is_site_local:
+            return False
+        # Check IPv4 addresses embedded into IPv6 ones
+        if ip.ipv4_mapped is not None:
+            return _is_public_ip(ip.ipv4_mapped)
+        if ip.sixtofour is not None:
+            return _is_public_ip(ip.sixtofour)
+        if ip in _NAT64_NETWORK:
+            return _is_public_ip(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
+    return ip.is_global and not ip.is_multicast
+
+
 def default_url_validator(url: str) -> None:
     """
     Reject urls that are not plain http(s) or whose host resolves
@@ -279,13 +296,18 @@ def default_url_validator(url: str) -> None:
     host = parts.hostname
     if not host:
         raise UnsafeURLError('No host in url: %s' % url)
+    if '%' in host:
+        raise UnsafeURLError('Scoped (zone id) address in url: %s' % url)
     try:
         infos = socket.getaddrinfo(host, parts.port or None, proto=socket.IPPROTO_TCP)
     except (socket.gaierror, UnicodeError) as e:
         raise HTTPLoaderError('Error resolving host of url: %s (%s)' % (url, e))
     for info in infos:
-        ip = ipaddress.ip_address(str(info[4][0]).split('%', 1)[0])
-        if not ip.is_global or ip.is_multicast:
+        addr = str(info[4][0])
+        if '%' in addr or (len(info[4]) > 3 and info[4][3]):
+            raise UnsafeURLError('Url host resolves to scoped address %s: %s' % (addr, url))
+        ip = ipaddress.ip_address(addr)
+        if not _is_public_ip(ip):
             raise UnsafeURLError('Url host resolves to non-public address %s: %s' % (ip, url))
 
 

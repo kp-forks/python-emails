@@ -80,12 +80,26 @@ def test_tls_verification_enabled_by_default():
     'http://0.0.0.0/',
     'http://2130706433/',
     'http://[::ffff:127.0.0.1]/',
+    'http://[fec0::1]/',                          # deprecated site-local
+    'http://[64:ff9b::7f00:1]/',                  # NAT64 -> 127.0.0.1
+    'http://[64:ff9b::a00:1]/',                   # NAT64 -> 10.0.0.1
+    'http://[2002:7f00:1::1]/',                   # 6to4 -> 127.0.0.1
+    'http://[2001:4860:4860::8888%25en0]/',       # zone id
     'file:///etc/passwd',
     'ftp://example.com/',
 ])
 def test_default_validator_rejects_unsafe_urls(url):
     with pytest.raises(UnsafeURLError):
         default_url_validator(url)
+
+
+@pytest.mark.parametrize('url', [
+    'http://8.8.8.8/',
+    'https://[2001:4860:4860::8888]/',
+    'http://[64:ff9b::808:808]/',                 # NAT64 -> 8.8.8.8
+])
+def test_default_validator_allows_public_addresses(url):
+    default_url_validator(url)
 
 
 def test_unsafe_url_error_is_http_loader_error():
